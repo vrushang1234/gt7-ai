@@ -3,6 +3,7 @@ import socket
 import struct
 import sys
 import time
+from datetime import datetime
 
 from Crypto.Cipher import Salsa20
 
@@ -188,22 +189,8 @@ def format_lap_time(ms: int) -> str:
 
 def print_telemetry(t: dict):
     print(
-        f"Lap {t['lap']:>2}/{t['total_laps']:<2} | "
-        f"Pos {t['race_position']:>2}/{t['total_positions']:<2} | "
-        f"{t['speed_mph']:>6.1f} mph | "
-        f"RPM {t['rpm']:>7.0f} | "
-        f"G {t['gear']}->{t['suggested_gear']} | "
-        f"Thr {t['throttle_pct']:>5.1f}% | "
-        f"Brk {t['brake_pct']:>5.1f}% | "
-        f"Fuel {t['fuel']:>5.1f}/{t['fuel_capacity']:<5.1f} | "
-        f"Tyre C {t['tyre_temp_fl']:.0f}/"
-        f"{t['tyre_temp_fr']:.0f}/"
-        f"{t['tyre_temp_rl']:.0f}/"
-        f"{t['tyre_temp_rr']:.0f} | "
-        f"Slip {t['tyre_slip_fl']:.2f}/"
-        f"{t['tyre_slip_fr']:.2f}/"
-        f"{t['tyre_slip_rl']:.2f}/"
-        f"{t['tyre_slip_rr']:.2f} | "
+        f"Lap {t['lap']:>2} | "
+        f"Cur {format_lap_time(t.get('current_lap_ms', 0))} | "
         f"Last {format_lap_time(t['last_lap_ms'])} | "
         f"Best {format_lap_time(t['best_lap_ms'])}"
     )
@@ -219,8 +206,9 @@ def main():
 
     log_file = None
     if record:
-        log_file = open("gt7_session.jsonl", "a", buffering=1)
-        print("Recording telemetry to gt7_session.jsonl")
+        log_path = f"gt7_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+        log_file = open(log_path, "a", buffering=1)
+        print(f"Recording telemetry to {log_path}")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", RECV_PORT))
@@ -231,6 +219,8 @@ def main():
     print("Start driving in GT7. Press Ctrl+C to stop.\n")
 
     last_heartbeat = 0
+    prev_lap = -1
+    lap_start_track_ms = 0
 
     try:
         while True:
@@ -241,18 +231,31 @@ def main():
                 last_heartbeat = now
 
             try:
-                data, _ = sock.recvfrom(4096)
+                data, addr = sock.recvfrom(4096)
             except socket.timeout:
+                print("[debug] recv timeout, no packet")
                 continue
+
+            print(f"[debug] got {len(data)} bytes from {addr}")
 
             packet = decrypt_gt7_packet(data)
             if packet is None:
+                print("[debug] decrypt failed (magic mismatch)")
                 continue
+
+            print(f"[debug] decrypted ok, paused={bool(u8(data, 0x8E) & 0b10)}")
 
             telemetry = parse_packet(packet)
 
             if telemetry["is_paused"]:
                 continue
+
+            lap = telemetry["lap"]
+            track_ms = telemetry["time_on_track_ms"]
+            if lap != prev_lap:
+                lap_start_track_ms = track_ms
+                prev_lap = lap
+            telemetry["current_lap_ms"] = max(0, track_ms - lap_start_track_ms)
 
             print_telemetry(telemetry)
 
