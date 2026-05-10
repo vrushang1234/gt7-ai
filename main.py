@@ -1,4 +1,5 @@
 import json
+import math
 import socket
 import struct
 import sys
@@ -189,6 +190,57 @@ def format_lap_time(ms: int) -> str:
     return f"{minutes}:{seconds:06.3f}"
 
 
+def compute_curvature(xs: list[float], zs: list[float]) -> list[float]:
+    n = len(xs)
+    k = [0.0] * n
+    for i in range(1, n - 1):
+        ax_, az_ = xs[i] - xs[i - 1], zs[i] - zs[i - 1]
+        bx_, bz_ = xs[i + 1] - xs[i], zs[i + 1] - zs[i]
+        cross = ax_ * bz_ - az_ * bx_
+        dot = ax_ * bx_ + az_ * bz_
+        angle = math.atan2(cross, dot)
+        arc = (math.hypot(ax_, az_) + math.hypot(bx_, bz_)) / 2.0
+        if arc < 1e-6:
+            continue
+        k[i] = angle / arc
+    return k
+
+
+def smooth(arr: list[float], window: int = 15) -> list[float]:
+    n = len(arr)
+    out = [0.0] * n
+    half = window // 2
+    for i in range(n):
+        lo = max(0, i - half)
+        hi = min(n, i + half + 1)
+        out[i] = sum(arr[lo:hi]) / (hi - lo)
+    return out
+
+
+def find_turns(
+    kappa: list[float], threshold: float = 0.005, min_len: int = 10
+) -> list[tuple[int, int, int, float]]:
+    turns: list[tuple[int, int, int, float]] = []
+    n = len(kappa)
+    i = 0
+    while i < n:
+        if abs(kappa[i]) < threshold:
+            i += 1
+            continue
+        sign = 1 if kappa[i] > 0 else -1
+        j = i
+        while (
+            j < n and abs(kappa[j]) >= threshold and (1 if kappa[j] > 0 else -1) == sign
+        ):
+            j += 1
+        if j - i >= min_len:
+            seg = kappa[i:j]
+            peak_off = max(range(len(seg)), key=lambda k_: abs(seg[k_]))
+            turns.append((i, j - 1, i + peak_off, seg[peak_off]))
+        i = j
+    return turns
+
+
 def pedal_color(thr_pct: float, brk_pct: float) -> tuple[float, float, float]:
     if brk_pct >= thr_pct and brk_pct > 0:
         v = 0.25 + 0.75 * min(brk_pct / 100.0, 1.0)
@@ -239,6 +291,48 @@ def save_lap_map(
         zorder=3,
         label="end",
     )
+
+    kappa = smooth(compute_curvature(xs, zs), window=21)
+    turns = find_turns(kappa, threshold=0.013, min_len=10)
+    for n_, (_s, _e, apex, kp) in enumerate(turns, start=1):
+        ax.scatter(
+            [plot_xs[apex]],
+            [plot_zs[apex]],
+            c="yellow",
+            edgecolors="black",
+            s=80,
+            zorder=4,
+        )
+        ax.annotate(
+            f"T{n_}",
+            (plot_xs[apex], plot_zs[apex]),
+            textcoords="offset points",
+            xytext=(6, 6),
+            fontsize=9,
+            fontweight="bold",
+        )
+
+    turns_path = f"lap_{session_tag}_{lap_num:02d}_turns.json"
+    with open(turns_path, "w") as f:
+        json.dump(
+            [
+                {
+                    "turn": n_,
+                    "start_idx": s,
+                    "end_idx": e,
+                    "apex_idx": apex,
+                    "apex_x": xs[apex],
+                    "apex_z": zs[apex],
+                    "peak_curvature": kp,
+                    "direction": "left" if kp > 0 else "right",
+                    "radius_m": (1.0 / abs(kp)) if abs(kp) > 1e-6 else None,
+                }
+                for n_, (s, e, apex, kp) in enumerate(turns, start=1)
+            ],
+            f,
+            indent=2,
+        )
+    print(f"[turns] {len(turns)} turns -> {turns_path}")
 
     pad = 20
     ax.set_xlim(min(plot_xs) - pad, max(plot_xs) + pad)
