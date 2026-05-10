@@ -7,6 +7,7 @@ from datetime import datetime
 
 import matplotlib.pyplot as plt
 from Crypto.Cipher import Salsa20
+from matplotlib.collections import LineCollection
 
 GT7_KEY = b"Simulator Interface Packet GT7 ver 0.0"
 RECV_PORT = 33740
@@ -188,22 +189,70 @@ def format_lap_time(ms: int) -> str:
     return f"{minutes}:{seconds:06.3f}"
 
 
-def save_lap_map(lap_num: int, xs: list[float], zs: list[float], session_tag: str):
+def pedal_color(thr_pct: float, brk_pct: float) -> tuple[float, float, float]:
+    if brk_pct >= thr_pct and brk_pct > 0:
+        v = 0.25 + 0.75 * min(brk_pct / 100.0, 1.0)
+        return (v, 0.0, 0.0)
+    if thr_pct > 0:
+        v = 0.25 + 0.75 * min(thr_pct / 100.0, 1.0)
+        return (0.0, v, 0.0)
+    return (0.4, 0.4, 0.4)
+
+
+def save_lap_map(
+    lap_num: int,
+    xs: list[float],
+    zs: list[float],
+    thr: list[float],
+    brk: list[float],
+    session_tag: str,
+):
     if len(xs) < 2:
         return
+
+    # rotate 180 degrees + mirror horizontally
+    plot_xs = xs
+    plot_zs = [-z for z in zs]
+
+    pts = [(plot_xs[i], plot_zs[i]) for i in range(len(plot_xs))]
+    segs = [[pts[i], pts[i + 1]] for i in range(len(pts) - 1)]
+    colors = [pedal_color(thr[i + 1], brk[i + 1]) for i in range(len(pts) - 1)]
+
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.plot(xs, zs, linewidth=1)
-    ax.scatter([xs[0]], [zs[0]], c="green", s=30, label="start")
-    ax.scatter([xs[-1]], [zs[-1]], c="red", s=30, label="end")
+    lc = LineCollection(segs, colors=colors, linewidths=2)
+    ax.add_collection(lc)
+
+    ax.scatter(
+        [plot_xs[0]],
+        [plot_zs[0]],
+        c="white",
+        edgecolors="black",
+        s=40,
+        zorder=3,
+        label="start",
+    )
+    ax.scatter(
+        [plot_xs[-1]],
+        [plot_zs[-1]],
+        c="black",
+        s=40,
+        zorder=3,
+        label="end",
+    )
+
+    pad = 20
+    ax.set_xlim(min(plot_xs) - pad, max(plot_xs) + pad)
+    ax.set_ylim(min(plot_zs) - pad, max(plot_zs) + pad)
     ax.set_aspect("equal")
     ax.set_xlabel("x")
     ax.set_ylabel("z")
-    ax.set_title(f"Lap {lap_num}")
-    ax.legend()
+    ax.set_title(f"Lap {lap_num} — green=throttle, red=brake")
     ax.grid(True, alpha=0.3)
+
     path = f"lap_{session_tag}_{lap_num:02d}.png"
     fig.savefig(path, dpi=120, bbox_inches="tight")
     plt.close(fig)
+
     print(f"[map] saved {path} ({len(xs)} pts)")
 
 
@@ -243,6 +292,8 @@ def main():
     lap_start_track_ms = 0
     lap_xs: list[float] = []
     lap_zs: list[float] = []
+    lap_thr: list[float] = []
+    lap_brk: list[float] = []
     session_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     try:
@@ -277,14 +328,20 @@ def main():
             track_ms = telemetry["time_on_track_ms"]
             if lap != prev_lap:
                 if prev_lap > 0 and lap_xs:
-                    save_lap_map(prev_lap, lap_xs, lap_zs, session_tag)
+                    save_lap_map(
+                        prev_lap, lap_xs, lap_zs, lap_thr, lap_brk, session_tag
+                    )
                 lap_xs = []
                 lap_zs = []
+                lap_thr = []
+                lap_brk = []
                 lap_start_track_ms = track_ms
                 prev_lap = lap
             telemetry["current_lap_ms"] = max(0, track_ms - lap_start_track_ms)
             lap_xs.append(telemetry["x"])
             lap_zs.append(telemetry["z"])
+            lap_thr.append(telemetry["throttle_pct"])
+            lap_brk.append(telemetry["brake_pct"])
 
             print_telemetry(telemetry)
 
@@ -296,7 +353,7 @@ def main():
 
     finally:
         if prev_lap > 0 and lap_xs:
-            save_lap_map(prev_lap, lap_xs, lap_zs, session_tag)
+            save_lap_map(prev_lap, lap_xs, lap_zs, lap_thr, lap_brk, session_tag)
         sock.close()
 
         if log_file is not None:
