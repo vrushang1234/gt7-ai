@@ -5,6 +5,7 @@ import sys
 import time
 from datetime import datetime
 
+import matplotlib.pyplot as plt
 from Crypto.Cipher import Salsa20
 
 GT7_KEY = b"Simulator Interface Packet GT7 ver 0.0"
@@ -187,6 +188,25 @@ def format_lap_time(ms: int) -> str:
     return f"{minutes}:{seconds:06.3f}"
 
 
+def save_lap_map(lap_num: int, xs: list[float], zs: list[float], session_tag: str):
+    if len(xs) < 2:
+        return
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.plot(xs, zs, linewidth=1)
+    ax.scatter([xs[0]], [zs[0]], c="green", s=30, label="start")
+    ax.scatter([xs[-1]], [zs[-1]], c="red", s=30, label="end")
+    ax.set_aspect("equal")
+    ax.set_xlabel("x")
+    ax.set_ylabel("z")
+    ax.set_title(f"Lap {lap_num}")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    path = f"lap_{session_tag}_{lap_num:02d}.png"
+    fig.savefig(path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[map] saved {path} ({len(xs)} pts)")
+
+
 def print_telemetry(t: dict):
     print(
         f"Lap {t['lap']:>2} | "
@@ -221,12 +241,15 @@ def main():
     last_heartbeat = 0
     prev_lap = -1
     lap_start_track_ms = 0
+    lap_xs: list[float] = []
+    lap_zs: list[float] = []
+    session_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     try:
         while True:
             now = time.time()
 
-            if now - last_heartbeat > 10:
+            if now - last_heartbeat > 1:
                 send_heartbeat(sock, ps_ip)
                 last_heartbeat = now
 
@@ -253,9 +276,15 @@ def main():
             lap = telemetry["lap"]
             track_ms = telemetry["time_on_track_ms"]
             if lap != prev_lap:
+                if prev_lap > 0 and lap_xs:
+                    save_lap_map(prev_lap, lap_xs, lap_zs, session_tag)
+                lap_xs = []
+                lap_zs = []
                 lap_start_track_ms = track_ms
                 prev_lap = lap
             telemetry["current_lap_ms"] = max(0, track_ms - lap_start_track_ms)
+            lap_xs.append(telemetry["x"])
+            lap_zs.append(telemetry["z"])
 
             print_telemetry(telemetry)
 
@@ -266,6 +295,8 @@ def main():
         print("\nStopped.")
 
     finally:
+        if prev_lap > 0 and lap_xs:
+            save_lap_map(prev_lap, lap_xs, lap_zs, session_tag)
         sock.close()
 
         if log_file is not None:
