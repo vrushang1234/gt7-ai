@@ -1,362 +1,14 @@
 import json
-import math
-import socket
-import struct
+import os
 import sys
 import time
 from datetime import datetime
 
-import matplotlib.pyplot as plt
-from Crypto.Cipher import Salsa20
-from matplotlib.collections import LineCollection
-
-GT7_KEY = b"Simulator Interface Packet GT7 ver 0.0"
-RECV_PORT = 33740
-SEND_PORT = 33739
-
-
-def decrypt_gt7_packet(data: bytes) -> bytes | None:
-    seed = data[0x40:0x44]
-
-    iv1 = int.from_bytes(seed, "little")
-    iv2 = iv1 ^ 0xDEADBEAF
-
-    nonce = iv2.to_bytes(4, "little") + iv1.to_bytes(4, "little")
-
-    cipher = Salsa20.new(key=GT7_KEY[:32], nonce=nonce)
-    decrypted = cipher.decrypt(data)
-
-    magic = int.from_bytes(decrypted[0:4], "little")
-    if magic != 0x47375330:
-        return None
-
-    return decrypted
-
-
-def f32(packet: bytes, offset: int) -> float:
-    return struct.unpack_from("<f", packet, offset)[0]
-
-
-def u8(packet: bytes, offset: int) -> int:
-    return struct.unpack_from("<B", packet, offset)[0]
-
-
-def u16(packet: bytes, offset: int) -> int:
-    return struct.unpack_from("<H", packet, offset)[0]
-
-
-def i16(packet: bytes, offset: int) -> int:
-    return struct.unpack_from("<h", packet, offset)[0]
-
-
-def i32(packet: bytes, offset: int) -> int:
-    return struct.unpack_from("<i", packet, offset)[0]
-
-
-def safe_ratio(num: float, den: float) -> float:
-    if abs(den) < 1e-6:
-        return 0.0
-    return num / den
-
-
-def parse_packet(packet: bytes) -> dict:
-    gear_byte = u8(packet, 0x90)
-
-    speed_mps = f32(packet, 0x4C)
-    speed_kph = speed_mps * 3.6
-    speed_mph = speed_mps * 2.23694
-
-    tyre_diameter_fl = f32(packet, 0xB4)
-    tyre_diameter_fr = f32(packet, 0xB8)
-    tyre_diameter_rl = f32(packet, 0xBC)
-    tyre_diameter_rr = f32(packet, 0xC0)
-
-    tyre_speed_fl = abs(3.6 * tyre_diameter_fl * f32(packet, 0xA4))
-    tyre_speed_fr = abs(3.6 * tyre_diameter_fr * f32(packet, 0xA8))
-    tyre_speed_rl = abs(3.6 * tyre_diameter_rl * f32(packet, 0xAC))
-    tyre_speed_rr = abs(3.6 * tyre_diameter_rr * f32(packet, 0xB0))
-
-    slip_divisor = speed_kph if speed_kph > 1.0 else 1.0
-
-    flags = u8(packet, 0x8E)
-
-    return {
-        # local timestamp
-        "recv_time": time.time(),
-        # timing / race
-        "tick": i32(packet, 0x70),
-        "lap": u16(packet, 0x74),
-        "total_laps": u16(packet, 0x76),
-        "best_lap_ms": i32(packet, 0x78),
-        "last_lap_ms": i32(packet, 0x7C),
-        "time_on_track_ms": i32(packet, 0x80),
-        "race_position": u16(packet, 0x84),
-        "total_positions": u16(packet, 0x86),
-        # car state
-        "car_id": i32(packet, 0x124),
-        "speed_mps": speed_mps,
-        "speed_kph": speed_kph,
-        "speed_mph": speed_mph,
-        "rpm": f32(packet, 0x3C),
-        "rpm_rev_warning": u16(packet, 0x88),
-        "rpm_rev_limiter": u16(packet, 0x8A),
-        "estimated_top_speed": i16(packet, 0x8C),
-        "gear": gear_byte & 0x0F,
-        "suggested_gear": gear_byte >> 4,
-        "throttle_raw": u8(packet, 0x91),
-        "brake_raw": u8(packet, 0x92),
-        "throttle_pct": u8(packet, 0x91) / 2.55,
-        "brake_pct": u8(packet, 0x92) / 2.55,
-        "boost": f32(packet, 0x50) - 1.0,
-        # fuel
-        "fuel": f32(packet, 0x44),
-        "fuel_capacity": f32(packet, 0x48),
-        "fuel_pct": safe_ratio(f32(packet, 0x44), f32(packet, 0x48)) * 100.0,
-        # temperatures / pressure
-        "oil_temp": f32(packet, 0x5C),
-        "water_temp": f32(packet, 0x58),
-        "oil_pressure": f32(packet, 0x54),
-        # tyre temps
-        "tyre_temp_fl": f32(packet, 0x60),
-        "tyre_temp_fr": f32(packet, 0x64),
-        "tyre_temp_rl": f32(packet, 0x68),
-        "tyre_temp_rr": f32(packet, 0x6C),
-        # position
-        "x": f32(packet, 0x04),
-        "y": f32(packet, 0x08),
-        "z": f32(packet, 0x0C),
-        # velocity
-        "velocity_x": f32(packet, 0x10),
-        "velocity_y": f32(packet, 0x14),
-        "velocity_z": f32(packet, 0x18),
-        # rotation
-        "rotation_pitch": f32(packet, 0x1C),
-        "rotation_yaw": f32(packet, 0x20),
-        "rotation_roll": f32(packet, 0x24),
-        # angular velocity
-        "angular_velocity_x": f32(packet, 0x2C),
-        "angular_velocity_y": f32(packet, 0x30),
-        "angular_velocity_z": f32(packet, 0x34),
-        # ride height / suspension
-        "ride_height_mm": f32(packet, 0x38) * 1000.0,
-        "suspension_fl": f32(packet, 0xC4),
-        "suspension_fr": f32(packet, 0xC8),
-        "suspension_rl": f32(packet, 0xCC),
-        "suspension_rr": f32(packet, 0xD0),
-        # tyres
-        "tyre_diameter_fl": tyre_diameter_fl,
-        "tyre_diameter_fr": tyre_diameter_fr,
-        "tyre_diameter_rl": tyre_diameter_rl,
-        "tyre_diameter_rr": tyre_diameter_rr,
-        "tyre_speed_fl": tyre_speed_fl,
-        "tyre_speed_fr": tyre_speed_fr,
-        "tyre_speed_rl": tyre_speed_rl,
-        "tyre_speed_rr": tyre_speed_rr,
-        "tyre_slip_fl": tyre_speed_fl / slip_divisor,
-        "tyre_slip_fr": tyre_speed_fr / slip_divisor,
-        "tyre_slip_rl": tyre_speed_rl / slip_divisor,
-        "tyre_slip_rr": tyre_speed_rr / slip_divisor,
-        # clutch
-        "clutch": f32(packet, 0xF4),
-        "clutch_engaged": f32(packet, 0xF8),
-        "rpm_after_clutch": f32(packet, 0xFC),
-        # gear ratios
-        "gear_ratio_1": f32(packet, 0x104),
-        "gear_ratio_2": f32(packet, 0x108),
-        "gear_ratio_3": f32(packet, 0x10C),
-        "gear_ratio_4": f32(packet, 0x110),
-        "gear_ratio_5": f32(packet, 0x114),
-        "gear_ratio_6": f32(packet, 0x118),
-        "gear_ratio_7": f32(packet, 0x11C),
-        "gear_ratio_8": f32(packet, 0x120),
-        # flags
-        "is_paused": bool(flags & 0b10),
-        "in_race": bool(flags & 0b01),
-    }
-
-
-def send_heartbeat(sock: socket.socket, ps_ip: str):
-    sock.sendto(b"A", (ps_ip, SEND_PORT))
-
-
-def format_lap_time(ms: int) -> str:
-    if ms <= 0:
-        return "--:--.---"
-
-    seconds = ms / 1000.0
-    minutes = int(seconds // 60)
-    seconds = seconds % 60
-
-    return f"{minutes}:{seconds:06.3f}"
-
-
-def compute_curvature(xs: list[float], zs: list[float]) -> list[float]:
-    n = len(xs)
-    k = [0.0] * n
-    for i in range(1, n - 1):
-        ax_, az_ = xs[i] - xs[i - 1], zs[i] - zs[i - 1]
-        bx_, bz_ = xs[i + 1] - xs[i], zs[i + 1] - zs[i]
-        cross = ax_ * bz_ - az_ * bx_
-        dot = ax_ * bx_ + az_ * bz_
-        angle = math.atan2(cross, dot)
-        arc = (math.hypot(ax_, az_) + math.hypot(bx_, bz_)) / 2.0
-        if arc < 1e-6:
-            continue
-        k[i] = angle / arc
-    return k
-
-
-def smooth(arr: list[float], window: int = 15) -> list[float]:
-    n = len(arr)
-    out = [0.0] * n
-    half = window // 2
-    for i in range(n):
-        lo = max(0, i - half)
-        hi = min(n, i + half + 1)
-        out[i] = sum(arr[lo:hi]) / (hi - lo)
-    return out
-
-
-def find_turns(
-    kappa: list[float], threshold: float = 0.005, min_len: int = 10
-) -> list[tuple[int, int, int, float]]:
-    turns: list[tuple[int, int, int, float]] = []
-    n = len(kappa)
-    i = 0
-    while i < n:
-        if abs(kappa[i]) < threshold:
-            i += 1
-            continue
-        sign = 1 if kappa[i] > 0 else -1
-        j = i
-        while (
-            j < n and abs(kappa[j]) >= threshold and (1 if kappa[j] > 0 else -1) == sign
-        ):
-            j += 1
-        if j - i >= min_len:
-            seg = kappa[i:j]
-            peak_off = max(range(len(seg)), key=lambda k_: abs(seg[k_]))
-            turns.append((i, j - 1, i + peak_off, seg[peak_off]))
-        i = j
-    return turns
-
-
-def pedal_color(thr_pct: float, brk_pct: float) -> tuple[float, float, float]:
-    if brk_pct >= thr_pct and brk_pct > 0:
-        v = 0.25 + 0.75 * min(brk_pct / 100.0, 1.0)
-        return (v, 0.0, 0.0)
-    if thr_pct > 0:
-        v = 0.25 + 0.75 * min(thr_pct / 100.0, 1.0)
-        return (0.0, v, 0.0)
-    return (0.4, 0.4, 0.4)
-
-
-def save_lap_map(
-    lap_num: int,
-    xs: list[float],
-    zs: list[float],
-    thr: list[float],
-    brk: list[float],
-    session_tag: str,
-):
-    if len(xs) < 2:
-        return
-
-    # rotate 180 degrees + mirror horizontally
-    plot_xs = xs
-    plot_zs = [-z for z in zs]
-
-    pts = [(plot_xs[i], plot_zs[i]) for i in range(len(plot_xs))]
-    segs = [[pts[i], pts[i + 1]] for i in range(len(pts) - 1)]
-    colors = [pedal_color(thr[i + 1], brk[i + 1]) for i in range(len(pts) - 1)]
-
-    fig, ax = plt.subplots(figsize=(8, 8))
-    lc = LineCollection(segs, colors=colors, linewidths=2)
-    ax.add_collection(lc)
-
-    ax.scatter(
-        [plot_xs[0]],
-        [plot_zs[0]],
-        c="white",
-        edgecolors="black",
-        s=40,
-        zorder=3,
-        label="start",
-    )
-    ax.scatter(
-        [plot_xs[-1]],
-        [plot_zs[-1]],
-        c="black",
-        s=40,
-        zorder=3,
-        label="end",
-    )
-
-    kappa = smooth(compute_curvature(xs, zs), window=21)
-    turns = find_turns(kappa, threshold=0.013, min_len=10)
-    for n_, (_s, _e, apex, kp) in enumerate(turns, start=1):
-        ax.scatter(
-            [plot_xs[apex]],
-            [plot_zs[apex]],
-            c="yellow",
-            edgecolors="black",
-            s=80,
-            zorder=4,
-        )
-        ax.annotate(
-            f"T{n_}",
-            (plot_xs[apex], plot_zs[apex]),
-            textcoords="offset points",
-            xytext=(6, 6),
-            fontsize=9,
-            fontweight="bold",
-        )
-
-    turns_path = f"lap_{session_tag}_{lap_num:02d}_turns.json"
-    with open(turns_path, "w") as f:
-        json.dump(
-            [
-                {
-                    "turn": n_,
-                    "start_idx": s,
-                    "end_idx": e,
-                    "apex_idx": apex,
-                    "apex_x": xs[apex],
-                    "apex_z": zs[apex],
-                    "peak_curvature": kp,
-                    "direction": "left" if kp > 0 else "right",
-                    "radius_m": (1.0 / abs(kp)) if abs(kp) > 1e-6 else None,
-                }
-                for n_, (s, e, apex, kp) in enumerate(turns, start=1)
-            ],
-            f,
-            indent=2,
-        )
-    print(f"[turns] {len(turns)} turns -> {turns_path}")
-
-    pad = 20
-    ax.set_xlim(min(plot_xs) - pad, max(plot_xs) + pad)
-    ax.set_ylim(min(plot_zs) - pad, max(plot_zs) + pad)
-    ax.set_aspect("equal")
-    ax.set_xlabel("x")
-    ax.set_ylabel("z")
-    ax.set_title(f"Lap {lap_num} — green=throttle, red=brake")
-    ax.grid(True, alpha=0.3)
-
-    path = f"lap_{session_tag}_{lap_num:02d}.png"
-    fig.savefig(path, dpi=120, bbox_inches="tight")
-    plt.close(fig)
-
-    print(f"[map] saved {path} ({len(xs)} pts)")
-
-
-def print_telemetry(t: dict):
-    print(
-        f"Lap {t['lap']:>2} | "
-        f"Cur {format_lap_time(t.get('current_lap_ms', 0))} | "
-        f"Last {format_lap_time(t['last_lap_ms'])} | "
-        f"Best {format_lap_time(t['best_lap_ms'])}"
-    )
+from crypto import decrypt_gt7_packet
+from display import print_telemetry
+from map_render import save_lap_map
+from network import RECV_PORT, SEND_PORT, open_socket, send_heartbeat
+from parser import parse_packet, u8
 
 
 def main():
@@ -369,19 +21,20 @@ def main():
 
     log_file = None
     if record:
-        log_path = f"gt7_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+        os.makedirs("logs", exist_ok=True)
+        log_path = os.path.join(
+            "logs", f"gt7_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+        )
         log_file = open(log_path, "a", buffering=1)
         print(f"Recording telemetry to {log_path}")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", RECV_PORT))
-    sock.settimeout(2.0)
+    sock = open_socket()
 
     print(f"Listening on UDP {RECV_PORT}")
     print(f"Sending heartbeat to {ps_ip}:{SEND_PORT}")
     print("Start driving in GT7. Press Ctrl+C to stop.\n")
 
-    last_heartbeat = 0
+    last_heartbeat = 0.0
     prev_lap = -1
     lap_start_track_ms = 0
     lap_xs: list[float] = []
@@ -400,7 +53,7 @@ def main():
 
             try:
                 data, addr = sock.recvfrom(4096)
-            except socket.timeout:
+            except TimeoutError:
                 print("[debug] recv timeout, no packet")
                 continue
 
@@ -422,9 +75,7 @@ def main():
             track_ms = telemetry["time_on_track_ms"]
             if lap != prev_lap:
                 if prev_lap > 0 and lap_xs:
-                    save_lap_map(
-                        prev_lap, lap_xs, lap_zs, lap_thr, lap_brk, session_tag
-                    )
+                    save_lap_map(prev_lap, lap_xs, lap_zs, lap_thr, lap_brk, session_tag)
                 lap_xs = []
                 lap_zs = []
                 lap_thr = []

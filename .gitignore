@@ -1,3 +1,8 @@
 *.jsonl
 *.json
 *.png
+.env
+__pycache__/
+logs/
+maps/
+turns/
