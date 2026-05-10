@@ -3,12 +3,14 @@ import os
 import sys
 import time
 from datetime import datetime
+from parser import parse_packet, u8
 
 from crypto import decrypt_gt7_packet
 from display import print_telemetry
+from live_compare import LiveCompare, format_delta
 from map_render import save_lap_map
 from network import RECV_PORT, SEND_PORT, open_socket, send_heartbeat
-from parser import parse_packet, u8
+from turn_summary import TurnSummaryBuilder, format_summary_text
 
 
 def main():
@@ -27,6 +29,26 @@ def main():
         )
         log_file = open(log_path, "a", buffering=1)
         print(f"Recording telemetry to {log_path}")
+
+    comparer = LiveCompare()
+    diff_file = None
+    summary_jsonl = None
+    summary_txt = None
+    summary_builder = TurnSummaryBuilder()
+    if comparer.loaded():
+        print(f"Loaded {len(comparer.turns)} reference turns from tactics/")
+        os.makedirs("diff", exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        diff_path = os.path.join("diff", f"live_diff_{ts}.jsonl")
+        sum_jsonl_path = os.path.join("diff", f"turn_summary_{ts}.jsonl")
+        sum_txt_path = os.path.join("diff", f"turn_summary_{ts}.txt")
+        diff_file = open(diff_path, "a", buffering=1)
+        summary_jsonl = open(sum_jsonl_path, "a", buffering=1)
+        summary_txt = open(sum_txt_path, "a", buffering=1)
+        print(f"Logging live diffs to {diff_path}")
+        print(f"Logging turn summaries to {sum_jsonl_path} + .txt")
+    else:
+        print("No tactics/best_tactics.json — live compare disabled")
 
     sock = open_socket()
 
@@ -75,7 +97,9 @@ def main():
             track_ms = telemetry["time_on_track_ms"]
             if lap != prev_lap:
                 if prev_lap > 0 and lap_xs:
-                    save_lap_map(prev_lap, lap_xs, lap_zs, lap_thr, lap_brk, session_tag)
+                    save_lap_map(
+                        prev_lap, lap_xs, lap_zs, lap_thr, lap_brk, session_tag
+                    )
                 lap_xs = []
                 lap_zs = []
                 lap_thr = []
@@ -90,7 +114,36 @@ def main():
 
             print_telemetry(telemetry)
 
-            if log_file is not None:
+            cmp_result = comparer.compare(telemetry)
+            if cmp_result is not None:
+                print("  " + format_delta(cmp_result))
+                if diff_file is not None:
+                    record = {
+                        "recv_time": telemetry["recv_time"],
+                        "time_on_track_ms": telemetry["time_on_track_ms"],
+                        "lap": telemetry["lap"],
+                        "x": telemetry["x"],
+                        "z": telemetry["z"],
+                        "speed_kph": telemetry["speed_kph"],
+                        "throttle_pct": telemetry["throttle_pct"],
+                        "brake_pct": telemetry["brake_pct"],
+                        "gear": telemetry["gear"],
+                        "rpm": telemetry["rpm"],
+                        **cmp_result,
+                    }
+                    diff_file.write(json.dumps(record) + "\n")
+
+            if comparer.loaded():
+                finished = summary_builder.push(cmp_result, telemetry)
+                if finished is not None:
+                    text = format_summary_text(finished)
+                    print("\n" + text + "\n")
+                    if summary_jsonl is not None:
+                        summary_jsonl.write(json.dumps(finished) + "\n")
+                    if summary_txt is not None:
+                        summary_txt.write(text + "\n\n")
+
+            if log_file is not None and telemetry["in_race"] and telemetry["lap"] > 0:
                 log_file.write(json.dumps(telemetry) + "\n")
 
     except KeyboardInterrupt:
@@ -103,6 +156,23 @@ def main():
 
         if log_file is not None:
             log_file.close()
+
+        if comparer.loaded():
+            final = summary_builder.flush()
+            if final is not None:
+                text = format_summary_text(final)
+                print("\n" + text + "\n")
+                if summary_jsonl is not None:
+                    summary_jsonl.write(json.dumps(final) + "\n")
+                if summary_txt is not None:
+                    summary_txt.write(text + "\n\n")
+
+        if diff_file is not None:
+            diff_file.close()
+        if summary_jsonl is not None:
+            summary_jsonl.close()
+        if summary_txt is not None:
+            summary_txt.close()
 
 
 if __name__ == "__main__":
