@@ -5,7 +5,9 @@ import time
 from datetime import datetime
 from parser import parse_packet, u8
 
+from coach import Coach
 from crypto import decrypt_gt7_packet
+from server import HUB, attach_coach, start_server
 from display import print_telemetry
 from live_compare import LiveCompare, format_delta
 from map_render import save_lap_map
@@ -35,6 +37,9 @@ def main():
     summary_jsonl = None
     summary_txt = None
     summary_builder = TurnSummaryBuilder()
+    coach = Coach()
+    attach_coach(coach)
+    start_server()
     if comparer.loaded():
         print(f"Loaded {len(comparer.turns)} reference turns from tactics/")
         os.makedirs("diff", exist_ok=True)
@@ -113,10 +118,12 @@ def main():
             lap_brk.append(telemetry["brake_pct"])
 
             print_telemetry(telemetry)
+            HUB.push("telemetry", telemetry)
 
             cmp_result = comparer.compare(telemetry)
             if cmp_result is not None:
                 print("  " + format_delta(cmp_result))
+                HUB.push("compare", cmp_result)
                 if diff_file is not None:
                     record = {
                         "recv_time": telemetry["recv_time"],
@@ -142,6 +149,7 @@ def main():
                         summary_jsonl.write(json.dumps(finished) + "\n")
                     if summary_txt is not None:
                         summary_txt.write(text + "\n\n")
+                    HUB.push("summary", {"summary": finished, "text": text})
 
             if log_file is not None and telemetry["in_race"] and telemetry["lap"] > 0:
                 log_file.write(json.dumps(telemetry) + "\n")

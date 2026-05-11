@@ -1,0 +1,398 @@
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #0e0e10;
+  color: #eaeaea;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: #15151a;
+  border-bottom: 1px solid #2a2a32;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #2a2a32;
+}
+.status.ok {
+  background: #1d4f2b;
+  color: #79e09c;
+}
+.status.bad {
+  background: #4f1d1d;
+  color: #e07979;
+}
+
+.grid {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  padding: 10px;
+  flex: 1;
+  min-height: 0;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+}
+.col-map {
+  flex: 1.6;
+}
+.col-mid {
+  flex: 1;
+}
+.col-right {
+  flex: 1;
+}
+
+.map-pane,
+.stats-pane,
+.feed-pane,
+.metrics-pane,
+.coach-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.map-pane {
+  flex: 1;
+}
+.stats-pane {
+  flex: 0 0 auto;
+}
+.feed-pane {
+  flex: 1;
+}
+.metrics-pane {
+  flex: 0 0 auto;
+  max-height: 60%;
+}
+.coach-pane {
+  flex: 1;
+}
+
+.map-pane > .track-map,
+.stats-pane > .panel,
+.feed-pane > .panel,
+.metrics-pane > .panel,
+.coach-pane > .panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.panel {
+  background: #15151a;
+  border: 1px solid #2a2a32;
+  border-radius: 8px;
+  padding: 5px 10px;
+  overflow: auto;
+}
+
+.panel h2 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #888;
+}
+.panel h3 {
+  margin: 12px 0 6px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #888;
+}
+
+.track-map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.track-map canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #0a0a0c;
+  border-radius: 8px;
+  border: 1px solid #2a2a32;
+}
+.track-map .overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #888;
+}
+
+.big-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.big-metric .num {
+  font-size: 56px;
+  font-weight: 700;
+}
+.big-metric .lbl {
+  color: #888;
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+.row .cell {
+  flex: 1;
+}
+.cell .num {
+  font-size: 22px;
+  font-weight: 600;
+}
+.cell .lbl {
+  color: #888;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.pedals {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+.pedals .lbl {
+  font-size: 11px;
+  color: #aaa;
+  margin-bottom: 4px;
+}
+.bar {
+  background: #2a2a32;
+  height: 10px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  transition: width 80ms linear;
+}
+
+.laptimes {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.laptimes .lbl {
+  font-size: 11px;
+  color: #888;
+}
+
+.compare .phase {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.compare .off {
+  color: #888;
+  font-weight: 400;
+  font-size: 12px;
+}
+.dgrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+.dgrid .lbl {
+  color: #888;
+  margin-right: 6px;
+  font-size: 11px;
+}
+.ref-src {
+  color: #666;
+  font-size: 10px;
+  margin-top: 6px;
+}
+
+.turn-feed .cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card {
+  background: #1c1c22;
+  border: 1px solid #2a2a32;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.card .head {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.card .head .dir {
+  color: #888;
+  font-weight: 400;
+}
+.card .head .lap,
+.card .head .dur {
+  color: #666;
+  margin-left: 6px;
+  font-weight: 400;
+}
+.card.clickable {
+  cursor: pointer;
+  transition: background 80ms;
+}
+.card.clickable:hover {
+  background: #25252d;
+  border-color: #3a3a44;
+}
+.card .phase-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: #ccc;
+}
+.card .tag {
+  background: #2a2a32;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 1px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.m-cell .lbl {
+  color: #888;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.m-cell .num {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.m-cell .unit {
+  font-size: 11px;
+  color: #888;
+  font-weight: 400;
+}
+
+.tyre-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.tyre-cell {
+  background: #1c1c22;
+  border: 1px solid #2a2a32;
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: center;
+}
+
+.coach-panel .hint {
+  color: #888;
+}
+.coach-panel .loading {
+  color: #ffd400;
+  font-style: italic;
+}
+.coach-panel .turn-tag {
+  display: inline-block;
+  background: #ffd400;
+  color: #000;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.coach-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.coach-panel .advice {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin: 0;
+  color: #eaeaea;
+  padding-right: 6px;
+}
+
+.track-map .zoom-out {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: #15151aee;
+  border: 1px solid #2a2a32;
+  color: #eaeaea;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.track-map .zoom-out:hover {
+  background: #25252dee;
+}
+.t-lbl {
+  color: #888;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.t-temp {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.t-slip {
+  color: #aaa;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

@@ -312,7 +312,7 @@ def entry_metrics(lap: dict, lo: int, apex_idx: int) -> tuple[dict, dict]:
     if brake_start >= 0:
         target_t = arr["times"][brake_start] + 100
         end_i = brake_start
-        while end_i < n and arr["times"][end_i] < target_t:
+        while end_i < n - 1 and arr["times"][end_i] < target_t:
             end_i += 1
         if end_i > brake_start:
             dt = (arr["times"][end_i] - arr["times"][brake_start]) / 1000.0
@@ -431,7 +431,7 @@ def exit_metrics(lap: dict, apex_idx: int, hi: int) -> tuple[dict, dict]:
     if throttle_on >= 0:
         target_t = arr["times"][throttle_on] + 100
         end_i = throttle_on
-        while end_i < n and arr["times"][end_i] < target_t:
+        while end_i < n - 1 and arr["times"][end_i] < target_t:
             end_i += 1
         if end_i > throttle_on:
             dt = (arr["times"][end_i] - arr["times"][throttle_on]) / 1000.0

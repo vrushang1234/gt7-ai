@@ -1,8 +1,11 @@
 import json
 import os
 
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.collections import LineCollection  # noqa: E402
 
 from geometry import compute_curvature, find_turns, smooth
 
