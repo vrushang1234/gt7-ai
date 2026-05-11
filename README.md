@@ -33,6 +33,9 @@ Telemetry data is analyzed against a reference lap to identify:
 
 An AI analysis layer then converts telemetry differences into concise driver coaching feedback.
 
+<img width="1046" height="634" alt="Dashboard_screenshot (Edited)" src="https://github.com/user-attachments/assets/b2d9acae-5211-4e5a-8bfe-4f28151ad44e" />
+
+
 
 ## Example Feedback
 
