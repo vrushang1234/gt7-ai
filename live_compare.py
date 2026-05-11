@@ -24,24 +24,36 @@ def _signed_loop_dist(a: float, b: float, total: float) -> float:
 
 class LiveCompare:
     def __init__(self, tactics_path: str = TACTICS_PATH, ref_path: str = REF_TRACK_PATH):
+        self._tactics_path = tactics_path
+        self._ref_path = ref_path
         self.ref_samples: list[dict] = []
         self.track_length_m = 0.0
         self.ref_meta = ""
+        self.ref_duration_ms = 0
         self.turns: list[dict] = []
         self._last_idx = 0
+        self.reload()
 
-        if os.path.exists(ref_path):
-            with open(ref_path) as f:
+    def reload(self) -> None:
+        ref_samples: list[dict] = []
+        track_length_m = 0.0
+        ref_meta = ""
+        ref_duration_ms = 0
+        turns: list[dict] = []
+
+        if os.path.exists(self._ref_path):
+            with open(self._ref_path) as f:
                 rt = json.load(f)
-            self.ref_samples = rt["samples"]
-            self.track_length_m = rt.get("track_length_m", 0.0)
-            self.ref_meta = f"{rt.get('source','?')} L{rt.get('lap','?')}"
+            ref_samples = rt["samples"]
+            track_length_m = rt.get("track_length_m", 0.0)
+            ref_meta = f"{rt.get('source','?')} L{rt.get('lap','?')}"
+            ref_duration_ms = rt.get("duration_ms", 0)
 
-        if os.path.exists(tactics_path):
-            with open(tactics_path) as f:
+        if os.path.exists(self._tactics_path):
+            with open(self._tactics_path) as f:
                 data = json.load(f)
             for t in data:
-                self.turns.append(
+                turns.append(
                     {
                         "turn": t["turn"],
                         "apex_x": t["apex_x"],
@@ -51,6 +63,13 @@ class LiveCompare:
                         "radius_m": t.get("radius_m"),
                     }
                 )
+
+        self.ref_samples = ref_samples
+        self.track_length_m = track_length_m
+        self.ref_meta = ref_meta
+        self.ref_duration_ms = ref_duration_ms
+        self.turns = turns
+        self._last_idx = 0
 
     def loaded(self) -> bool:
         return bool(self.ref_samples)

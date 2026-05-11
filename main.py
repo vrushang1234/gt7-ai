@@ -1,6 +1,8 @@
 import json
 import os
+import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
 from parser import parse_packet, u8
@@ -14,6 +16,52 @@ from map_render import save_lap_map
 from network import RECV_PORT, SEND_PORT, open_socket, send_heartbeat
 from turn_summary import TurnSummaryBuilder, format_summary_text
 
+_update_lock = threading.Lock()
+_updating = False
+
+
+def trigger_best_update(comparer: LiveCompare, lap_ms: int) -> None:
+    global _updating
+    with _update_lock:
+        if _updating:
+            print(f"[auto-update] skip (already running)")
+            return
+        _updating = True
+
+    def worker():
+        global _updating
+        try:
+            print(f"[auto-update] new fast lap {lap_ms}ms — running analyze.py")
+            r = subprocess.run(
+                [sys.executable, "analyze.py"],
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode != 0:
+                print(f"[auto-update] analyze failed: {r.stderr.strip()}")
+                return
+            print("[auto-update] analyze done; reloading reference")
+            comparer.reload()
+            for ev_type, path in (
+                ("snapshot_reference", "tactics/reference_track.json"),
+                ("snapshot_tactics", "tactics/best_tactics.json"),
+            ):
+                if os.path.exists(path):
+                    with open(path) as f:
+                        data = json.load(f)
+                    HUB.push(ev_type, data)
+            print(
+                f"[auto-update] new reference: {comparer.ref_meta} "
+                f"({comparer.ref_duration_ms}ms)"
+            )
+        except Exception as e:
+            print(f"[auto-update] error: {e}")
+        finally:
+            with _update_lock:
+                _updating = False
+
+    threading.Thread(target=worker, daemon=True).start()
+
 
 def main():
     if len(sys.argv) < 2:
@@ -21,16 +69,13 @@ def main():
         sys.exit(1)
 
     ps_ip = sys.argv[1]
-    record = "--record" in sys.argv
 
-    log_file = None
-    if record:
-        os.makedirs("logs", exist_ok=True)
-        log_path = os.path.join(
-            "logs", f"gt7_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
-        )
-        log_file = open(log_path, "a", buffering=1)
-        print(f"Recording telemetry to {log_path}")
+    os.makedirs("logs", exist_ok=True)
+    log_path = os.path.join(
+        "logs", f"gt7_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    )
+    log_file = open(log_path, "a", buffering=1)
+    print(f"Recording telemetry to {log_path}")
 
     comparer = LiveCompare()
     diff_file = None
@@ -105,6 +150,16 @@ def main():
                     save_lap_map(
                         prev_lap, lap_xs, lap_zs, lap_thr, lap_brk, session_tag
                     )
+                last_ms = telemetry["last_lap_ms"]
+                ref_ms = comparer.ref_duration_ms
+                if (
+                    prev_lap > 0
+                    and 0 < last_ms
+                    and (ref_ms == 0 or last_ms < ref_ms)
+                ):
+                    if log_file is not None:
+                        log_file.flush()
+                    trigger_best_update(comparer, last_ms)
                 lap_xs = []
                 lap_zs = []
                 lap_thr = []
