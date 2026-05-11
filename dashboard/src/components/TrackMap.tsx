@@ -1,11 +1,18 @@
 import { useEffect, useRef } from 'react'
-import type { ReferenceTrack, ReferenceSample, Tactic, Telemetry } from '../types'
+import type {
+  PlaybackSample,
+  ReferenceTrack,
+  ReferenceSample,
+  Tactic,
+  Telemetry,
+} from '../types'
 
 type Props = {
   reference: ReferenceTrack | null
   tactics: Tactic[] | null
   telemetry: Telemetry | null
   focusedTurn: number | null
+  playback?: { sample: PlaybackSample; trail: PlaybackSample[] } | null
   onTurnClick?: (turn: number) => void
   onClearFocus?: () => void
 }
@@ -22,6 +29,7 @@ export function TrackMap({
   tactics,
   telemetry,
   focusedTurn,
+  playback,
   onTurnClick,
   onClearFocus,
 }: Props) {
@@ -130,7 +138,34 @@ export function TrackMap({
       }
     }
 
-    if (telemetry && inView(telemetry.x, telemetry.z)) {
+    if (playback && playback.trail.length > 1) {
+      ctx.strokeStyle = '#ff66ff'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      for (let i = 0; i < playback.trail.length; i++) {
+        const s = playback.trail[i]
+        const px = tx(s.x)
+        const py = ty(s.z)
+        if (i === 0) ctx.moveTo(px, py)
+        else ctx.lineTo(px, py)
+      }
+      ctx.stroke()
+    }
+
+    if (playback) {
+      const s = playback.sample
+      if (inView(s.x, s.z)) {
+        const px = tx(s.x)
+        const py = ty(s.z)
+        ctx.fillStyle = '#ff66ff'
+        ctx.strokeStyle = '#000'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.arc(px, py, 9, 0, 2 * Math.PI)
+        ctx.fill()
+        ctx.stroke()
+      }
+    } else if (telemetry && inView(telemetry.x, telemetry.z)) {
       const px = tx(telemetry.x)
       const py = ty(telemetry.z)
       ctx.fillStyle = '#fff'
@@ -141,7 +176,7 @@ export function TrackMap({
       ctx.fill()
       ctx.stroke()
     }
-  }, [reference, tactics, telemetry, focusedTurn])
+  }, [reference, tactics, telemetry, focusedTurn, playback])
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!tactics || !transformRef.current || !onTurnClick) return

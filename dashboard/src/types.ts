@@ -84,6 +84,26 @@ export type PhaseAggregate = {
   max_racing_line_offset_m: number
 }
 
+export type PlaybackSample = {
+  t_ms: number
+  x: number
+  z: number
+  speed_kph: number
+  throttle_pct: number
+  brake_pct: number
+  gear: number
+  rpm: number
+  phase: 'entry' | 'exit' | 'straight'
+  ref_idx: number | null
+  racing_line_offset_m: number
+  ref_speed_kph: number
+  ref_throttle_pct: number
+  ref_brake_pct: number
+  delta_speed_kph: number
+  delta_throttle_pct: number
+  delta_brake_pct: number
+}
+
 export type TurnSummary = {
   summary: {
     turn: number
@@ -94,6 +114,7 @@ export type TurnSummary = {
     total_samples: number
     entry: PhaseAggregate | null
     exit: PhaseAggregate | null
+    samples?: PlaybackSample[]
   }
   text: string
 }

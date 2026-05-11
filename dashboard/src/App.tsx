@@ -5,6 +5,7 @@ import { LiveStats } from "./components/LiveStats";
 import { TurnFeed } from "./components/TurnFeed";
 import { MetricsPanel } from "./components/MetricsPanel";
 import { CoachPanel } from "./components/CoachPanel";
+import { PlaybackBar } from "./components/PlaybackBar";
 import type {
   Telemetry,
   CompareResult,
@@ -13,7 +14,16 @@ import type {
   ReferenceTrack,
   Tactic,
   StreamMessage,
+  PlaybackSample,
 } from "./types";
+
+type Playback = {
+  turn: number;
+  samples: PlaybackSample[];
+  idx: number;
+  playing: boolean;
+  speed: number;
+};
 
 function App() {
   const [reference, setReference] = useState<ReferenceTrack | null>(null);
@@ -22,10 +32,14 @@ function App() {
   const [compare, setCompare] = useState<CompareResult | null>(null);
   const [summaries, setSummaries] = useState<TurnSummary[]>([]);
   const [coach, setCoach] = useState<CoachMsg | null>(null);
+  const [coachCache, setCoachCache] = useState<Record<number, CoachMsg>>({});
   const [pendingTurn, setPendingTurn] = useState<number | null>(null);
   const [focusedTurn, setFocusedTurn] = useState<number | null>(null);
+  const [playback, setPlayback] = useState<Playback | null>(null);
   const [connected, setConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+  const playbackRef = useRef<Playback | null>(null);
+  playbackRef.current = playback;
 
   useEffect(() => {
     const es = new EventSource("/api/stream");
@@ -60,6 +74,9 @@ function App() {
             const c = msg.data as CoachMsg;
             setCoach(c);
             setPendingTurn((p) => (p === c.turn ? null : p));
+            if (c.turn != null) {
+              setCoachCache((prev) => ({ ...prev, [c.turn as number]: c }));
+            }
             break;
           }
         }
@@ -73,8 +90,61 @@ function App() {
     };
   }, []);
 
+  // Playback ticker — advances idx based on real elapsed time scaled by speed
+  useEffect(() => {
+    if (!playback?.playing) return;
+    const startedAt = performance.now();
+    const startIdx = playback.idx;
+    const samples = playback.samples;
+    const t0 = samples[startIdx]?.t_ms ?? 0;
+    const speed = playback.speed;
+
+    let raf = 0;
+    const step = () => {
+      const elapsed = (performance.now() - startedAt) * speed;
+      const target = t0 + elapsed;
+      let i = startIdx;
+      while (i < samples.length - 1 && samples[i + 1].t_ms <= target) i++;
+      if (i >= samples.length - 1) {
+        setPlayback((p) =>
+          p ? { ...p, idx: samples.length - 1, playing: false } : p,
+        );
+        return;
+      }
+      setPlayback((p) => (p ? { ...p, idx: i } : p));
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+    // restart effect when play/pause toggles or speed changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playback?.playing, playback?.speed]);
+
   const requestCoach = async (turn: number) => {
     setFocusedTurn(turn);
+
+    // Start playback for latest summary of this turn (if available)
+    const matching = [...summaries]
+      .reverse()
+      .find((s) => s.summary.turn === turn);
+    if (matching?.summary.samples && matching.summary.samples.length > 1) {
+      setPlayback({
+        turn,
+        samples: matching.summary.samples,
+        idx: 0,
+        playing: true,
+        speed: 1,
+      });
+    } else {
+      setPlayback(null);
+    }
+
+    if (coachCache[turn]) {
+      setCoach(coachCache[turn]);
+      setPendingTurn(null);
+      return;
+    }
+
     setPendingTurn(turn);
     try {
       const r = await fetch(`/api/coach?turn=${turn}`);
@@ -88,6 +158,27 @@ function App() {
       setCoach({ turn, text: `request failed: ${e}`, audio_path: null });
     }
   };
+
+  const playbackForMap = playback
+    ? {
+        sample: playback.samples[playback.idx],
+        trail: playback.samples.slice(0, playback.idx + 1),
+      }
+    : null;
+
+  const playbackTelemetry: Telemetry | null = playback
+    ? ({
+        ...(telemetry ?? ({} as Telemetry)),
+        x: playback.samples[playback.idx].x,
+        z: playback.samples[playback.idx].z,
+        speed_kph: playback.samples[playback.idx].speed_kph,
+        speed_mph: playback.samples[playback.idx].speed_kph * 0.621371,
+        throttle_pct: playback.samples[playback.idx].throttle_pct,
+        brake_pct: playback.samples[playback.idx].brake_pct,
+        gear: playback.samples[playback.idx].gear,
+        rpm: playback.samples[playback.idx].rpm,
+      } as Telemetry)
+    : telemetry;
 
   return (
     <div className="dashboard">
@@ -105,14 +196,37 @@ function App() {
               tactics={tactics}
               telemetry={telemetry}
               focusedTurn={focusedTurn}
+              playback={playbackForMap}
               onTurnClick={requestCoach}
-              onClearFocus={() => setFocusedTurn(null)}
+              onClearFocus={() => {
+                setFocusedTurn(null);
+                setPlayback(null);
+              }}
             />
           </div>
+          {playback && (
+            <PlaybackBar
+              turn={playback.turn}
+              samples={playback.samples}
+              idx={playback.idx}
+              playing={playback.playing}
+              speed={playback.speed}
+              onPlayPause={() =>
+                setPlayback((p) => (p ? { ...p, playing: !p.playing } : p))
+              }
+              onSeek={(i) =>
+                setPlayback((p) => (p ? { ...p, idx: i, playing: false } : p))
+              }
+              onStop={() => setPlayback(null)}
+              onSpeedChange={(s) =>
+                setPlayback((p) => (p ? { ...p, speed: s } : p))
+              }
+            />
+          )}
         </div>
         <div className="col col-mid">
           <div className="stats-pane">
-            <LiveStats telemetry={telemetry} compare={compare} />
+            <LiveStats telemetry={playbackTelemetry} compare={compare} />
           </div>
           <div className="feed-pane">
             <TurnFeed summaries={summaries} onTurnClick={requestCoach} />

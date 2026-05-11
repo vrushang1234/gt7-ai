@@ -90,6 +90,29 @@ class TurnSummaryBuilder:
         entry_agg = _phase_aggregate(self.records, "entry")
         exit_agg = _phase_aggregate(self.records, "exit")
 
+        samples = [
+            {
+                "t_ms": t.get("time_on_track_ms"),
+                "x": t.get("x"),
+                "z": t.get("z"),
+                "speed_kph": t.get("speed_kph"),
+                "throttle_pct": t.get("throttle_pct"),
+                "brake_pct": t.get("brake_pct"),
+                "gear": t.get("gear"),
+                "rpm": t.get("rpm"),
+                "phase": c.get("phase"),
+                "ref_idx": c.get("ref_idx"),
+                "racing_line_offset_m": c.get("racing_line_offset_m"),
+                "ref_speed_kph": c.get("ref_speed_kph"),
+                "ref_throttle_pct": c.get("ref_throttle_pct"),
+                "ref_brake_pct": c.get("ref_brake_pct"),
+                "delta_speed_kph": c.get("delta_speed_kph"),
+                "delta_throttle_pct": c.get("delta_throttle_pct"),
+                "delta_brake_pct": c.get("delta_brake_pct"),
+            }
+            for c, t in self.records
+        ]
+
         return {
             "turn": self.current_turn,
             "direction": first_c.get("direction"),
@@ -103,6 +126,7 @@ class TurnSummaryBuilder:
             "total_samples": len(self.records),
             "entry": entry_agg,
             "exit": exit_agg,
+            "samples": samples,
         }
 
     def push(self, cmp_result: dict | None, telemetry: dict) -> dict | None:
