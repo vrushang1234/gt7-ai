@@ -5,16 +5,15 @@ import sys
 import threading
 import time
 from datetime import datetime
-from parser import parse_packet, u8
-
-from coach import Coach
-from crypto import decrypt_gt7_packet
-from server import HUB, attach_coach, start_server
-from display import print_telemetry
-from live_compare import LiveCompare, format_delta
-from map_render import save_lap_map
-from network import RECV_PORT, SEND_PORT, open_socket, send_heartbeat
-from turn_summary import TurnSummaryBuilder, format_summary_text
+from gt7.coach import Coach
+from gt7.crypto import decrypt_gt7_packet
+from gt7.display import print_telemetry
+from gt7.live_compare import LiveCompare, format_delta
+from gt7.map_render import save_lap_map
+from gt7.network import RECV_PORT, SEND_PORT, open_socket, send_heartbeat
+from gt7.parser import parse_packet, u8
+from gt7.server import HUB, attach_coach, start_server
+from gt7.turn_summary import TurnSummaryBuilder, format_summary_text
 
 _update_lock = threading.Lock()
 _updating = False

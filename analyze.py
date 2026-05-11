@@ -3,7 +3,7 @@ import math
 import os
 from glob import glob
 
-from geometry import compute_curvature, find_turns, smooth
+from gt7.geometry import compute_curvature, find_turns, smooth
 
 LOGS_DIR = "logs"
 OUT_DIR = "tactics"

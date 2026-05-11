@@ -7,7 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.collections import LineCollection  # noqa: E402
 
-from geometry import compute_curvature, find_turns, smooth
+from .geometry import compute_curvature, find_turns, smooth
 
 MAPS_DIR = "maps"
 TURNS_DIR = "turns"

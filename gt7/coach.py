@@ -102,7 +102,7 @@ class Coach:
 
     def _push(self, turn_id, text: str) -> None:
         try:
-            from server import HUB
+            from .server import HUB
             HUB.push(
                 "coach",
                 {"turn": turn_id, "text": text, "audio_path": None},
